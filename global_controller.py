@@ -5,15 +5,15 @@ import logging
 from datetime import datetime
 
 # APIs
-get_nodes_api = "localhost:5001/nodes"
-start_node_api = "localhost:5001/start-node"
-delete_node_api = "localhost:5001/delete-node"
-cpu_api = "localhost:5001/cpu"
+get_nodes_api = "http://localhost:5001/nodes"
+start_node_api = "http://localhost:5001/start-node"
+delete_node_api = "http://localhost:5001/delete-node"
+cpu_api = "http://localhost:5001/cpu"
 
 # settings
 sample_time = 5  # every X seconds, save the CPU usage of each node
 loop_sleep_time = (
-    30  # every X seconds, based on the CPU usage, make a scaling up/down decision
+    3  # every X seconds, based on the CPU usage, make a scaling up/down decision
 )
 master_node = "k8s-master"
 worker_nodes = [
@@ -21,13 +21,18 @@ worker_nodes = [
     "k8s-worker2",
 ]  # list of the two workers, in the order of jobs assignemnt priority, e.g., job will be assigned to master node, if unable, to the worker1, then worker2
 node_job_api = {
-    "k8s-master": "localhost:5002/job",
-    "k8s-worker1": "localhost:5002/job",
-    "k8s-worker2": "localhost:5002/job",
+    "k8s-master": "http://localhost:5001/ljob",
+    "k8s-worker1": "http://localhost:5001/ljob",
+    "k8s-worker2": "http://localhost:5001/ljob",
+}
+node_pod_api = {
+    "k8s-master": "http://localhost:5001/lpod-num",
+    "k8s-worker1": "http://localhost:5001/lpod-num",
+    "k8s-worker2": "http://localhost:5001/lpod-num",
 }
 cpu_bar = 0.8
 number_cpu_data_used = (
-    6  # use the previous X number of cpu to see if we need to scale up
+    2  # use the previous X number of cpu to see if we need to scale up
 )
 node_start_delay = (
     30  # no scaling down decision in X seconds after a scaling up decision
@@ -42,9 +47,27 @@ job_file_name = "job_list.txt"
 #     worker_nodes[1]: [],
 # }
 cluster_cpu = []  # recent cluster CPU usage
-started_nodes = [master_node]  # the nodes that have been started by the controller.
+started_nodes = [
+    master_node,
+    # "k8s-worker1",
+]  # the nodes that have been started by the controller.
 last_started_time = datetime.now()
 job_list = []
+
+
+def get_node_pod_num(node):
+    try:
+        response = requests.get(node_pod_api[node])
+        if response.status_code == 200:
+            res = response.json()
+            if res["success"]:
+                return res["pod-num"], None
+            else:
+                return None, f"Error: {res['msg']}"
+        else:
+            return None, f"Error: {response.status_code}"
+    except Exception as e:
+        return None, e
 
 
 def read_file_to_list(file_path):
@@ -135,7 +158,7 @@ def remove_worker(node_name):
 
 def sample_cpu():
     """sample the cluster CPU"""
-    global sample_time, started_nodes
+    global sample_time, started_nodes, cluster_cpu
     while True:
         running_nodes, err = get_nodes()
         logging.debug(f"running nodes: {running_nodes}")
@@ -158,9 +181,10 @@ def sample_cpu():
                     f"removing node {node} from worker nodes because it stops accidentally"
                 )
                 remove_worker(node)
-
+                continue
             if node not in nodes_cpu:
                 logging.error(f"can't get node CPU, node: {node}")
+                continue
             total_cpu += nodes_cpu[node] / 100
             num += 1
         if num != 0:
@@ -172,13 +196,15 @@ def sample_cpu():
 
 def controller():
     """make scaling up of scaling down decision"""
-    global started_nodes, cluster_cpu, number_cpu_data_used, cpu_bar
+    global started_nodes, cluster_cpu, number_cpu_data_used, cpu_bar, last_started_time
     while True:
         # scaling up decision
         # compute cluster cpu
         ave_cluster_cpu = None
         if len(cluster_cpu) < number_cpu_data_used:
             logging.info("not enough CPU data, skip scaling up")
+            time.sleep(loop_sleep_time)
+            continue
         else:
             cpu_data = cluster_cpu[-number_cpu_data_used:]
             ave_cluster_cpu = sum(cpu_data) / number_cpu_data_used
@@ -186,14 +212,19 @@ def controller():
             # scale up
             if len(started_nodes) == len(worker_nodes) + 1:
                 logging.info("all nodes started, won't scale up")
-            logging.info(
-                f"current cluster average {ave_cluster_cpu}, greater than {cpu_bar}, scaling up"
-            )
-            new_node = worker_nodes[
-                len(started_nodes) - 1
-            ]  # master node is always started
-            started_nodes(new_node)
-            last_started_time = datetime.now()
+            else:
+                logging.info(
+                    f"current cluster average {ave_cluster_cpu}, greater than {cpu_bar}, scaling up"
+                )
+                new_node = worker_nodes[
+                    len(started_nodes) - 1
+                ]  # master node is always started
+                ok, err = start_new_node(new_node)
+                if ok:
+                    started_nodes.append(new_node)
+                    last_started_time = datetime.now()
+                else:
+                    logging.error(f"error trying to start node {new_node}, msg: {err}")
         else:
             logging.info(
                 f"current cluster average {ave_cluster_cpu}, less than {cpu_bar}, not scaling up"
@@ -201,12 +232,28 @@ def controller():
         # scaling down decision
         if (
             datetime.now() - last_started_time
-        ).total_seconds() > node_start_delay and started_nodes > 1:
+        ).total_seconds() > node_start_delay and len(started_nodes) > 1:
             # check last node jobs, if it's zero, delete it
-            target_node = started_nodes.pop()
-            ok, e = delete_node(target_node)
-            if not ok:
-                logging.error(f"error when deleting node {target_node}, error: {e}")
+            target_node = started_nodes[-1]
+
+            # check node pod num
+            pod_num, err = get_node_pod_num(target_node)
+            if pod_num is None:
+                logging.error(f"error getting pod num for node {target_node}")
+            else:
+                if pod_num == 0:
+                    ok, e = delete_node(target_node)
+                    if not ok:
+                        logging.error(
+                            f"error when deleting node {target_node}, error: {e}"
+                        )
+                    else:
+                        started_nodes.pop()
+                        logging.info(f"scaling down: deleted node {target_node}")
+                else:
+                    logging.debug(
+                        f"node {target_node} pod num {pod_num}, won't be deleted"
+                    )
         time.sleep(loop_sleep_time)
 
 
@@ -251,6 +298,10 @@ def job_scheduling():
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
     # read job list
     job_list, error = read_file_to_list(job_file_name)
     logging.info(f"getting job list from {job_file_name}")
@@ -259,11 +310,15 @@ if __name__ == "__main__":
         logging.critical("shutting down")
         exit(0)
 
+    # sample_cpu()
+
     # start CPU sampling
     logging.info("start sampling")
     sample_cpu_thread = threading.Thread(target=sample_cpu)
     sample_cpu_thread.daemon = True
     sample_cpu_thread.start()
+
+    controller()
 
     # start controller
     logging.info("start controller")
