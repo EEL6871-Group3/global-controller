@@ -32,14 +32,14 @@ worker_nodes = [
     "k8s-worker2",
 ]  # list of the two workers, in the order of jobs assignemnt priority, e.g., job will be assigned to master node, if unable, to the worker1, then worker2
 node_job_api = {
-    "k8s-master": "http://localhost:5001/ljob",
-    "k8s-worker1": "http://localhost:5001/ljob",
-    "k8s-worker2": "http://localhost:5001/ljob",
+    "k8s-master": "http://localhost:5001/job",
+    "k8s-worker1": "http://localhost:5001/job",
+    "k8s-worker2": "http://localhost:5001/job",
 }
 node_pod_api = {
-    "k8s-master": "http://localhost:5001/lpod-num",
-    "k8s-worker1": "http://localhost:5001/lpod-num",
-    "k8s-worker2": "http://localhost:5001/lpod-num",
+    "k8s-master": "http://localhost:5001/pod-num",
+    "k8s-worker1": "http://localhost:5001/pod-num",
+    "k8s-worker2": "http://localhost:5001/pod-num",
 }
 cpu_bar = 0.8
 number_cpu_data_used = (

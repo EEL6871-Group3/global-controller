@@ -15,20 +15,20 @@ sample_time = 5  # every X seconds, save the CPU usage of each node
 loop_sleep_time = (
     3  # every X seconds, based on the CPU usage, make a scaling up/down decision
 )
-master_node = "k8s-master"
+master_node = "node0.group-3-project.ufl-eel6871-fa23-pg0.utah.cloudlab.us"
 worker_nodes = [
-    "k8s-worker1",
-    "k8s-worker2",
+    "node1.group-3-project.ufl-eel6871-fa23-pg0.utah.cloudlab.us",
+    "node2.group-3-project.ufl-eel6871-fa23-pg0.utah.cloudlab.us",
 ]  # list of the two workers, in the order of jobs assignemnt priority, e.g., job will be assigned to master node, if unable, to the worker1, then worker2
 node_job_api = {
-    "k8s-master": "http://localhost:5001/ljob",
-    "k8s-worker1": "http://localhost:5001/ljob",
-    "k8s-worker2": "http://localhost:5001/ljob",
+    "node0.group-3-project.ufl-eel6871-fa23-pg0.utah.cloudlab.us": "http://128.110.217.71:5004/job",
+    "node1.group-3-project.ufl-eel6871-fa23-pg0.utah.cloudlab.us": "http://128.110.217.114:5004/job",
+    "node2.group-3-project.ufl-eel6871-fa23-pg0.utah.cloudlab.us": "http://128.110.217.87:5004/job",
 }
 node_pod_api = {
-    "k8s-master": "http://localhost:5001/lpod-num",
-    "k8s-worker1": "http://localhost:5001/lpod-num",
-    "k8s-worker2": "http://localhost:5001/lpod-num",
+    "node0.group-3-project.ufl-eel6871-fa23-pg0.utah.cloudlab.us": "http://128.110.217.71:5004/lpod-num",
+    "node1.group-3-project.ufl-eel6871-fa23-pg0.utah.cloudlab.us": "http://128.110.217.114:5004/lpod-num",
+    "node2.group-3-project.ufl-eel6871-fa23-pg0.utah.cloudlab.us": "http://128.110.217.87:5004/lpod-num",
 }
 cpu_bar = 0.8
 number_cpu_data_used = (
@@ -49,7 +49,7 @@ job_file_name = "job_list.txt"
 cluster_cpu = []  # recent cluster CPU usage
 started_nodes = [
     master_node,
-    # "k8s-worker1",
+    # "node1.group-3-project.ufl-eel6871-fa23-pg0.utah.cloudlab.us",
 ]  # the nodes that have been started by the controller.
 last_started_time = datetime.now()
 job_list = []
