@@ -20,22 +20,23 @@ worker_nodes = [
     "node1.group-3-project.ufl-eel6871-fa23-pg0.utah.cloudlab.us",
     "node2.group-3-project.ufl-eel6871-fa23-pg0.utah.cloudlab.us",
 ]  # list of the two workers, in the order of jobs assignemnt priority, e.g., job will be assigned to master node, if unable, to the worker1, then worker2
-node_job_api = {
-    "node0.group-3-project.ufl-eel6871-fa23-pg0.utah.cloudlab.us": "http://128.110.217.71:5004/job",
-    "node1.group-3-project.ufl-eel6871-fa23-pg0.utah.cloudlab.us": "http://128.110.217.114:5004/job",
-    "node2.group-3-project.ufl-eel6871-fa23-pg0.utah.cloudlab.us": "http://128.110.217.87:5004/job",
-}
-node_pod_api = {
-    "node0.group-3-project.ufl-eel6871-fa23-pg0.utah.cloudlab.us": "http://128.110.217.71:5004/lpod-num",
-    "node1.group-3-project.ufl-eel6871-fa23-pg0.utah.cloudlab.us": "http://128.110.217.114:5004/lpod-num",
-    "node2.group-3-project.ufl-eel6871-fa23-pg0.utah.cloudlab.us": "http://128.110.217.87:5004/lpod-num",
-}
 
 node_url = {
-    "node0.group-3-project.ufl-eel6871-fa23-pg0.utah.cloudlab.us": "http://128.110.217.71:5004/",
-    "node1.group-3-project.ufl-eel6871-fa23-pg0.utah.cloudlab.us": "http://128.110.217.114:5004/",
-    "node2.group-3-project.ufl-eel6871-fa23-pg0.utah.cloudlab.us": "http://128.110.217.87:5004/",
+    master_node: "http://128.110.217.71:5004/",
+    worker_nodes[0]: "http://128.110.217.114:5004/",
+    worker_nodes[1]: "http://128.110.217.87:5004/",
 }
+node_job_api = {
+    master_node: node_url[master_node] + "job",
+    worker_nodes[0]: node_url[worker_nodes[0]] + "job",
+    worker_nodes[1]: node_url[worker_nodes[1]] + "job",
+}
+node_pod_api = {
+    master_node: node_url[master_node] + "pod-num",
+    worker_nodes[0]: node_url[worker_nodes[0]] + "pod-num",
+    worker_nodes[1]: node_url[worker_nodes[1]] + "pod-num",
+}
+
 cpu_bar = 0.8
 number_cpu_data_used = (
     2  # use the previous X number of cpu to see if we need to scale up
