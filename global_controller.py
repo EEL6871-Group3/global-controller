@@ -343,6 +343,13 @@ if __name__ == "__main__":
         level=logging.DEBUG,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
+
+    # manually delete the worker nodes
+    for node in worker_nodes:
+        ok, msg = delete_node(node)
+        if not ok:
+            logging.error(f"error when deleting the node {node}, error: {msg}")
+
     # read job list
     job_list, error = read_file_to_list(job_file_name)
     logging.info(f"getting job list from {job_file_name}")
