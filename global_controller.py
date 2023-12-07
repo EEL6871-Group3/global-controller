@@ -30,6 +30,12 @@ node_pod_api = {
     "node1.group-3-project.ufl-eel6871-fa23-pg0.utah.cloudlab.us": "http://128.110.217.114:5004/lpod-num",
     "node2.group-3-project.ufl-eel6871-fa23-pg0.utah.cloudlab.us": "http://128.110.217.87:5004/lpod-num",
 }
+
+node_url = {
+    "node0.group-3-project.ufl-eel6871-fa23-pg0.utah.cloudlab.us": "http://128.110.217.71:5004/",
+    "node1.group-3-project.ufl-eel6871-fa23-pg0.utah.cloudlab.us": "http://128.110.217.114:5004/",
+    "node2.group-3-project.ufl-eel6871-fa23-pg0.utah.cloudlab.us": "http://128.110.217.87:5004/",
+}
 cpu_bar = 0.8
 number_cpu_data_used = (
     2  # use the previous X number of cpu to see if we need to scale up
@@ -117,6 +123,30 @@ def delete_node(node_name):
     try:
         payload = {"node": node_name}
         response = requests.post(delete_node_api, json=payload)
+        if response.status_code == 200:
+            res = response.json()
+            return res["success"], res["msg"]
+        else:
+            return False, f"Error: {response.status_code}"
+    except Exception as e:
+        return False, e
+
+
+def start_controller(node_name):
+    try:
+        response = requests.get(node_url[node_name] + "/start")
+        if response.status_code == 200:
+            res = response.json()
+            return res["success"], res["msg"]
+        else:
+            return False, f"Error: {response.status_code}"
+    except Exception as e:
+        return False, e
+
+
+def stop_controller(node_name):
+    try:
+        response = requests.get(node_url[node_name] + "/stop")
         if response.status_code == 200:
             res = response.json()
             return res["success"], res["msg"]
@@ -221,8 +251,14 @@ def controller():
                 ]  # master node is always started
                 ok, err = start_new_node(new_node)
                 if ok:
-                    started_nodes.append(new_node)
-                    last_started_time = datetime.now()
+                    ok, msg = start_controller(new_node)
+                    if ok:
+                        started_nodes.append(new_node)
+                        last_started_time = datetime.now()
+                    else:
+                        logging.error(
+                            f"error trying to start the controller for node {new_node}, msg: {msg}"
+                        )
                 else:
                     logging.error(f"error trying to start node {new_node}, msg: {err}")
         else:
@@ -248,10 +284,15 @@ def controller():
                             f"error when deleting node {target_node}, error: {e}"
                         )
                     else:
+                        ok, msg = stop_controller(target_node)
                         started_nodes.pop()
                         logging.info(f"scaling down: deleted node {target_node}")
+                        if not ok:
+                            logging.error(
+                                f"error when stopping controller of the deleted node {target_node}, error: {msg}"
+                            )
                 else:
-                    logging.debug(
+                    logging.error(
                         f"node {target_node} pod num {pod_num}, won't be deleted"
                     )
         time.sleep(loop_sleep_time)
