@@ -47,7 +47,10 @@ node_start_delay = (
 job_assign_time = 5  # every X seconds, schedule a job
 job_file_name = "job_list.txt"
 res_file = "global_controller.txt"
-node_num_file = "node.txt"
+node_num_file = "node.txt"  # store total number of nodes
+pod_num_file = "pod.txt"  # store total number of pods in the cluster
+cpu_file = "cpu.txt"
+
 
 # global variables
 # CPU_usage = {
@@ -71,6 +74,21 @@ def get_node_pod_num(node):
             res = response.json()
             if res["success"]:
                 return res["pod-num"], None
+            else:
+                return None, f"Error: {res['msg']}"
+        else:
+            return None, f"Error: {response.status_code}"
+    except Exception as e:
+        return None, e
+
+
+def get_max_pod(node):
+    try:
+        response = requests.get(node_url[node] + "maxpod")
+        if response.status_code == 200:
+            res = response.json()
+            if res["success"]:
+                return res["maxpod"], None
             else:
                 return None, f"Error: {res['msg']}"
         else:
@@ -192,6 +210,7 @@ def remove_worker(node_name):
 def sample_cpu():
     """sample the cluster CPU"""
     global sample_time, started_nodes, cluster_cpu
+    cur_time = 0
     while True:
         running_nodes, err = get_nodes()
         logging.debug(f"running nodes: {running_nodes}")
@@ -207,7 +226,9 @@ def sample_cpu():
             continue
         total_cpu = 0
         num = 0
+        total_pods = 0
         for node in started_nodes:
+            # detect errors
             if node not in running_nodes:
                 logging.error(f"node started but not currently running: {node}")
                 logging.info(
@@ -222,6 +243,13 @@ def sample_cpu():
             if node not in nodes_cpu:
                 logging.error(f"can't get node CPU, assume CPU is 0, node: {node}")
                 nodes_cpu[node] = 0
+            # get pod num
+            pod_num, _ = get_node_pod_num(node)
+            total_pods += pod_num
+            # get and store maxpod
+            maxpod, _ = get_max_pod(node)
+            append_line_to_file(node + ".txt", f"{cur_time}, {maxpod}")
+
             logging.info(f"node {node} CPU: {nodes_cpu[node]}")
             total_cpu += nodes_cpu[node] / 100
             num += 1
@@ -229,7 +257,12 @@ def sample_cpu():
             cur_cluster_cpu = total_cpu / num
             cluster_cpu.append(cur_cluster_cpu)
             logging.info(f"current cluster cpu: {cur_cluster_cpu}")
+        # save number of nodes, pods and CPU
+        append_line_to_file(node_num_file, f"{cur_time}, {num}")
+        append_line_to_file(pod_num_file, f"{cur_time}, {total_pods}")
+        append_line_to_file(cpu_file, f"{cur_time}, {cur_cluster_cpu}")
         time.sleep(sample_time)
+        cur_time += sample_time
 
 
 def controller():
@@ -315,9 +348,6 @@ def controller():
                     logging.error(
                         f"node {target_node} pod num {pod_num}, won't be deleted"
                     )
-        append_line_to_file(
-            node_num_file, get_current_time_string() + f"{started_nodes}"
-        )
         time.sleep(loop_sleep_time)
 
 
