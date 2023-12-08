@@ -5,15 +5,15 @@ import logging
 from datetime import datetime
 
 # APIs
-get_nodes_api = "http://localhost:5001/nodes"
-start_node_api = "http://localhost:5001/start-node"
-delete_node_api = "http://localhost:5001/delete-node"
-cpu_api = "http://localhost:5001/cpu"
+get_nodes_api = "http://128.110.217.71:5001/nodes"
+start_node_api = "http://128.110.217.71:5001/start-node"
+delete_node_api = "http://128.110.217.71:5001/delete-node"
+cpu_api = "http://128.110.217.71:5001/cpu"
 
 # settings
 sample_time = 5  # every X seconds, save the CPU usage of each node
 loop_sleep_time = (
-    3  # every X seconds, based on the CPU usage, make a scaling up/down decision
+    5  # every X seconds, based on the CPU usage, make a scaling up/down decision
 )
 master_node = "node0.group-3-project.ufl-eel6871-fa23-pg0.utah.cloudlab.us"
 worker_nodes = [
@@ -44,8 +44,10 @@ number_cpu_data_used = (
 node_start_delay = (
     30  # no scaling down decision in X seconds after a scaling up decision
 )
-job_assign_time = 15  # every X seconds, schedule a job
+job_assign_time = 5  # every X seconds, schedule a job
 job_file_name = "job_list.txt"
+res_file = "global_controller.txt"
+node_num_file = "node.txt"
 
 # global variables
 # CPU_usage = {
@@ -135,7 +137,7 @@ def delete_node(node_name):
 
 def start_controller(node_name):
     try:
-        response = requests.get(node_url[node_name] + "/start")
+        response = requests.get(node_url[node_name] + "start")
         if response.status_code == 200:
             res = response.json()
             return res["success"], res["msg"]
@@ -147,7 +149,7 @@ def start_controller(node_name):
 
 def stop_controller(node_name):
     try:
-        response = requests.get(node_url[node_name] + "/stop")
+        response = requests.get(node_url[node_name] + "stop")
         if response.status_code == 200:
             res = response.json()
             return res["success"], res["msg"]
@@ -211,11 +213,16 @@ def sample_cpu():
                 logging.info(
                     f"removing node {node} from worker nodes because it stops accidentally"
                 )
+                append_line_to_file(
+                    res_file,
+                    get_current_time_string() + f"node error detected, removing {node}",
+                )
                 remove_worker(node)
                 continue
             if node not in nodes_cpu:
-                logging.error(f"can't get node CPU, node: {node}")
-                continue
+                logging.error(f"can't get node CPU, assume CPU is 0, node: {node}")
+                nodes_cpu[node] = 0
+            logging.info(f"node {node} CPU: {nodes_cpu[node]}")
             total_cpu += nodes_cpu[node] / 100
             num += 1
         if num != 0:
@@ -255,6 +262,13 @@ def controller():
                     ok, msg = start_controller(new_node)
                     if ok:
                         started_nodes.append(new_node)
+                        logging.info(f"added new node {new_node} for scaling up")
+                        append_line_to_file(
+                            res_file,
+                            get_current_time_string()
+                            + f"scaled up by adding new node {new_node}",
+                        )
+                        cluster_cpu = []  # reset the cluster CPU data
                         last_started_time = datetime.now()
                     else:
                         logging.error(
@@ -288,6 +302,11 @@ def controller():
                         ok, msg = stop_controller(target_node)
                         started_nodes.pop()
                         logging.info(f"scaling down: deleted node {target_node}")
+                        append_line_to_file(
+                            res_file,
+                            get_current_time_string()
+                            + f"scaled down by deleting node {target_node}",
+                        )
                         if not ok:
                             logging.error(
                                 f"error when stopping controller of the deleted node {target_node}, error: {msg}"
@@ -296,6 +315,9 @@ def controller():
                     logging.error(
                         f"node {target_node} pod num {pod_num}, won't be deleted"
                     )
+        append_line_to_file(
+            node_num_file, get_current_time_string() + f"{started_nodes}"
+        )
         time.sleep(loop_sleep_time)
 
 
@@ -319,7 +341,8 @@ def assign_job(job, node_name):
 
 
 def job_scheduling():
-    while True:
+    global job_list
+    while job_list:
         job = job_list[0]
         job_assigned = False
         for node in started_nodes:
@@ -328,6 +351,10 @@ def job_scheduling():
                 logging.info(f"can't assign job {job} to node {node}, because {err}")
             else:
                 logging.info(f"assgiend job {job} to node {node}")
+                append_line_to_file(
+                    res_file,
+                    get_current_time_string() + f"assgiend job {job} to node {node}",
+                )
                 job_assigned = True
                 break
         if not job_assigned:
@@ -339,17 +366,56 @@ def job_scheduling():
         time.sleep(job_assign_time)
 
 
+def get_current_time_string():
+    """
+    Returns the current time as a formatted string.
+
+    Returns:
+    str: The current time in 'HH:MM:SS' format.
+    """
+    current_time = datetime.now()
+    return current_time.strftime("%H:%M:%S ")
+
+
+def append_line_to_file(filename, line):
+    """
+    Appends a given line to a file.
+
+    Args:
+    filename (str): The name of the file to which the line will be appended.
+    line (str): The line to be appended to the file.
+
+    Returns:
+    None
+    """
+    with open(filename, "a") as file:
+        file.write(line + "\n")
+
+
+# Example usage
+append_line_to_file("example.txt", "This is a new line.")
+
+
 if __name__ == "__main__":
     logging.basicConfig(
         level=logging.DEBUG,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
+    # Set the logging level for 'urllib3.connectionpool' to WARNING or higher
+    logging.getLogger("urllib3.connectionpool").setLevel(logging.WARNING)
 
     # manually delete the worker nodes
     for node in worker_nodes:
         ok, msg = delete_node(node)
         if not ok:
             logging.error(f"error when deleting the node {node}, error: {msg}")
+        else:
+            logging.info(f"worker node deleted: {node}")
+    ok, msg = start_controller(master_node)
+    if not ok:
+        logging.error(f"error when starting the master node controller, error: {msg}")
+    else:
+        logging.info("master node local controller started")
 
     # read job list
     job_list, error = read_file_to_list(job_file_name)
@@ -360,14 +426,13 @@ if __name__ == "__main__":
         exit(0)
 
     # sample_cpu()
+    # job_scheduling()
 
     # start CPU sampling
     logging.info("start sampling")
     sample_cpu_thread = threading.Thread(target=sample_cpu)
     sample_cpu_thread.daemon = True
     sample_cpu_thread.start()
-
-    controller()
 
     # start controller
     logging.info("start controller")
@@ -376,7 +441,10 @@ if __name__ == "__main__":
     controller_thread.start()
 
     # start job rendering
-    logging.info("start controller")
+    logging.info("start job")
     job_thread = threading.Thread(target=job_scheduling)
     job_thread.daemon = True
     job_thread.start()
+
+    while True:
+        time.sleep(5)
